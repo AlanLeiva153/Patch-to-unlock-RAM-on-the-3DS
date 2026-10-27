@@ -25,9 +25,24 @@ STAGE = os.path.join(HERE, "_tools_stage")
 BUILD = os.path.join(HERE, "_build")
 
 
+LOG = os.path.join(HERE, "build_log.txt")
+_tail = []
+
+
 def run(*cmd):
+    """Ejecuta el comando mostrando la salida y guardándola en build_log.txt."""
     print(">", " ".join(cmd))
-    subprocess.check_call(list(cmd))
+    p = subprocess.Popen(list(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, encoding="utf-8", errors="replace", cwd=HERE)
+    with open(LOG, "a", encoding="utf-8") as log:
+        log.write("> " + " ".join(cmd) + "\n")
+        for line in p.stdout:
+            print(line, end="")
+            log.write(line)
+            _tail.append(line)
+            del _tail[:-30]
+    if p.wait() != 0:
+        raise subprocess.CalledProcessError(p.returncode, cmd)
 
 
 def find_tool(name):
@@ -40,11 +55,14 @@ def find_tool(name):
 
 
 def main():
+    os.chdir(HERE)  # PyInstaller no corre desde C:\\Windows\\system32
     if not os.path.isfile(MAIN):
         sys.exit("No encuentro RAM_Unlock_3DS.py junto a build_exe.py")
     if sys.platform != "win32":
         print("AVISO: no estás en Windows; el ejecutable resultante NO será un .exe de Windows.")
 
+    open(LOG, "w").close()
+    print("Python:", sys.version)
     print("== Instalando dependencias ==")
     run(sys.executable, "-m", "pip", "install", "--upgrade", "pyinstaller", "tkinterdnd2")
 
@@ -75,8 +93,22 @@ def main():
     shutil.rmtree(BUILD, ignore_errors=True)
 
     exe = os.path.join(HERE, NAME + (".exe" if sys.platform == "win32" else ""))
-    print("\nListo ->", exe)
+    if os.path.isfile(exe):
+        print("\n✔ LISTO. Tu programa está aquí:\n  ", exe)
+    else:
+        print("\n✘ PyInstaller terminó pero NO existe:", exe)
+        print("  Si ves un aviso de antivirus (Windows Defender), probablemente lo borró:")
+        print("  agrega esta carpeta a las exclusiones y ejecuta el script otra vez.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as e:
+        print("\n✘ ERROR: falló el comando:", " ".join(map(str, e.cmd)))
+        print("\n--- ÚLTIMAS LÍNEAS (el motivo del error) ---")
+        print("".join(_tail))
+        print("Log completo guardado en:", LOG)
+    except Exception as e:  # noqa
+        print("\n✘ ERROR:", e)
+    input("\nPresiona Enter para cerrar...")
